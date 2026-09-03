@@ -3,6 +3,7 @@ import request from "supertest";
 import app from "../app.js";
 import { pool } from "../db/db.js";
 import { email } from "zod";
+import { Result } from "pg";
 
 describe("Post auth/register", () => {
   beforeEach(async () => {
@@ -131,5 +132,88 @@ describe("Post auth/login", () => {
       email: "test@example.com",
     });
     expect(result.status).toBe(400);
+  });
+});
+
+describe("Authentication middleware", () => {
+  beforeEach(async () => {
+    await pool.query("delete from users where email=$1", ["test@example.com"]);
+  });
+
+  it("should reject request without token", async () => {
+    const result = await request(app).get("/auth/protected");
+    expect(result.status).toBe(401);
+  });
+
+  it("should reject request with invalid token", async () => {
+    const result = await request(app)
+      .get("/auth/protected")
+      .set("Authorization", "Bearer dlfkj5535324");
+
+    expect(result.status).toBe(401);
+  });
+
+  it("should reject request with invalid authorization scheme", async () => {
+    await request(app).post("/auth/register").send({
+      name: "Test User",
+      email: "test@example.com",
+      password: "12345678",
+    });
+
+    const response = await request(app).post("/auth/login").send({
+      email: "test@example.com",
+      password: "12345678",
+    });
+
+    const token = response.body.token;
+    const result = await request(app)
+      .get("/auth/protected")
+      .set("Authorization", `${token}`);
+
+    expect(result.status).toBe(401);
+    expect(result.body.message).toBe("Unauthorized");
+  });
+
+  it("should allow request with valid token", async () => {
+    await request(app).post("/auth/register").send({
+      name: "Test User",
+      email: "test@example.com",
+      password: "12345678",
+    });
+
+    const response = await request(app).post("/auth/login").send({
+      email: "test@example.com",
+      password: "12345678",
+    });
+
+    const token = response.body.token;
+    const result = await request(app)
+      .get("/auth/protected")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(result.status).toBe(200);
+  });
+
+  it("should attach authenticated user ot request", async () => {
+    const registerResponse = await request(app).post("/auth/register").send({
+      name: "Test User",
+      email: "test@example.com",
+      password: "12345678",
+    });
+
+    const response = await request(app).post("/auth/login").send({
+      email: "test@example.com",
+      password: "12345678",
+    });
+
+    const token = response.body.token;
+    const result = await request(app)
+      .get("/auth/protected")
+      .set("Authorization", `Bearer ${token}`);
+    console.log(result.body);
+    console.log(registerResponse.body);
+    const expectedUserId = registerResponse.body.user.id;
+    expect(result.body.user.userId).toBe(expectedUserId);
+    expect(result.body.user.role).toBe("customer");
   });
 });

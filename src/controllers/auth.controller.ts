@@ -18,7 +18,7 @@ export const registerUser = async (
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      "insert into users (name, email, password) values($1, $2, $3) returning name, email",
+      "insert into users (name, email, password) values($1, $2, $3) returning id, name, email",
       [name, email, hashedPassword],
     );
 
